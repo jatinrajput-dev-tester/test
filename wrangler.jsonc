@@ -1,0 +1,45 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hatch-discord-bot",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "observability": {
+    "enabled": true
+  },
+
+  // FocusTimer (one per /focus), MemoryStore (one per person), UsageStore (one per person)
+  // and SpaceStore (one per space owner, holding that owner's one space record). New classes
+  // go in a NEW migration tag; never edit a tag once it is deployed. SpaceCreator was folded
+  // into SpaceStore, so it has no binding.
+  "durable_objects": {
+    "bindings": [
+      { "name": "FOCUS_TIMERS", "class_name": "FocusTimer" },
+      { "name": "MEMORIES", "class_name": "MemoryStore" },
+      { "name": "USAGE", "class_name": "UsageStore" },
+      { "name": "SPACES", "class_name": "SpaceStore" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["FocusTimer"] },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["MemoryStore", "UsageStore", "SpaceStore", "SpaceCreator"]
+    },
+    // SpaceCreator is folded into SpaceStore. Its records were never readable by any other
+    // object, so no working space depended on them.
+    { "tag": "v3", "deleted_classes": ["SpaceCreator"] }
+  ],
+
+  // Cron is UTC. 30 3 * * * = 03:30 UTC = 09:00 IST. Update this comment with the cron.
+  "triggers": {
+    "crons": ["30 3 * * *"]
+  },
+
+  // Non-secret IDs only. A value still starting with PASTE_ turns that feature off.
+  // Tokens, keys and the app ID live in `wrangler secret put`.
+  "vars": {
+    "GUILD_ID": "1567841119524626442",
+    "SESSION_PINGS_ROLE_ID": "1574411659177369701",
+    "GOALS_CHANNEL_ID": "1573590971713851485"
+  }
+}

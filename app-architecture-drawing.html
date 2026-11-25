@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>How the Hatch bot works</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:#f7f8fb;color:#0f172a;overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  header{position:fixed;top:0;left:0;right:0;z-index:20;pointer-events:none;
+    display:flex;justify-content:space-between;align-items:flex-start;gap:20px;
+    padding:14px 20px 26px;background:linear-gradient(#f7f8fb 42%,rgba(247,248,251,0))}
+  .hgroup{pointer-events:auto;max-width:640px}
+  h1{font-size:18px;line-height:1.2;margin:0 0 5px;letter-spacing:-.015em}
+  .sub{font-size:12.8px;line-height:1.5;color:#64748b;margin:0}
+  .sub b{color:#334155;font-weight:650}
+  .btns{pointer-events:auto;display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+  button.ui{font:inherit;font-size:12px;font-weight:600;color:#334155;background:#fff;
+    border:1px solid #e2e8f0;border-radius:9px;padding:7px 11px;cursor:pointer;
+    box-shadow:0 1px 2px rgba(15,23,42,.05);transition:.14s}
+  button.ui:hover{border-color:#cbd5e1;color:#0f172a;box-shadow:0 2px 8px rgba(15,23,42,.08)}
+  button.ui[aria-pressed="true"]{background:#0f172a;border-color:#0f172a;color:#fff}
+  #stage{position:fixed;inset:0;cursor:grab;touch-action:none}
+  #stage.dragging{cursor:grabbing}
+  #legend{position:fixed;left:20px;bottom:16px;z-index:15;display:flex;gap:7px;flex-wrap:wrap;max-width:64vw}
+  .chip{font:inherit;font-size:11.6px;font-weight:600;color:#475569;background:rgba(255,255,255,.9);
+    border:1px solid #e2e8f0;border-radius:999px;padding:6px 11px 6px 9px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:7px;transition:.14s}
+  .chip:hover{border-color:#cbd5e1;color:#0f172a}
+  .chip[aria-pressed="true"]{background:#0f172a;border-color:#0f172a;color:#fff}
+  .chip .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .chip .n{font-size:10.5px;font-weight:700;opacity:.55}
+  .hint{position:fixed;right:20px;bottom:16px;z-index:14;font-size:11.4px;color:#94a3b8;text-align:right;line-height:1.5}
+  #panel{position:fixed;top:0;right:0;z-index:30;width:392px;max-width:94vw;height:100%;
+    background:#fff;border-left:1px solid #e6ebf2;box-shadow:-14px 0 44px rgba(15,23,42,.10);
+    display:flex;flex-direction:column;transform:translateX(103%);transition:transform .24s cubic-bezier(.4,0,.2,1)}
+  #panel.open{transform:none}
+  #panelHead{padding:16px 18px 13px;border-bottom:1px solid #eef2f7;position:relative}
+  #pKind{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#94a3b8}
+  #pTitle{font-size:18px;line-height:1.25;margin:5px 0 3px;letter-spacing:-.01em}
+  #pRole{font-size:12.6px;color:#64748b}
+  #close{position:absolute;top:11px;right:11px;width:26px;height:26px;border-radius:8px;border:0;
+    background:#f1f5f9;color:#64748b;font-size:15px;line-height:1;cursor:pointer}
+  #close:hover{background:#e2e8f0;color:#0f172a}
+  #pBody{overflow:auto;padding:4px 18px 30px}
+  .sec{margin-top:17px}
+  .sec h4{font-size:9.8px;letter-spacing:.14em;text-transform:uppercase;color:#94a3b8;margin:0 0 8px;font-weight:800}
+  .row{font-size:13.2px;line-height:1.6;color:#334155;margin-bottom:7px}
+  .lead{font-size:14px;line-height:1.62;color:#1e293b}
+  .payload{font-size:12px;line-height:1.65;background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;
+    padding:10px 12px;color:#475569;white-space:pre-wrap;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .file{display:block;margin-bottom:5px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#f1f5f9;
+    padding:1px 5px;border-radius:5px;font-size:11.4px;color:#334155}
+  .tag{display:inline-block;color:#fff;font-size:10.4px;font-weight:700;padding:2px 8px;border-radius:999px;margin-right:6px;vertical-align:1px}
+  .muted{color:#94a3b8;font-size:12px;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <div class="hgroup">
+    <h1>How the Hatch bot works</h1>
+    <p class="sub">You type something in Discord. The bot does the work. You see the result.<br />
+      Start with the numbered steps <b>1 to 9</b>. Click a colour below for one story, or hover any box to reveal just its wires.</p>
+  </div>
+  <div class="btns">
+    <button class="ui" id="fit">Fit to screen</button>
+    <button class="ui" id="techBtn" aria-pressed="false">Tech details</button>
+    <button class="ui" id="svgBtn">SVG</button>
+    <button class="ui" id="pngBtn">PNG</button>
+  </div>
+</header>
+
+<div id="stage"></div>
+<div id="legend"><div id="chips" style="display:contents"></div></div>
+<div class="hint">drag to move, scroll to zoom<br />press Esc to close</div>
+
+<aside id="panel" aria-hidden="true">
+  <div id="panelHead">
+    <button id="close" aria-label="Close">x</button>
+    <div id="pKind">box</div>
+    <div id="pTitle">Title</div>
+    <div id="pRole">role</div>
+  </div>
+  <div id="pBody"></div>
+</aside>
+
+<script>/* ==========================================================================
+   How the Hatch bot works - the plain-English map.
+   Built from src/*.ts, wrangler.jsonc and scripts/register-commands.ts.
+   The technical paths are real; switch on "Tech details" to see them.
+   ========================================================================== */
+
+var W = 1636, H = 1150;
+
+var COLOR = {
+  cmd:"#2563eb", auth:"#e11d48", ai:"#7c3aed", db:"#d97706", bg:"#059669", helper:"#94a3b8"
+};
+
+var STORY = ["e1","e2","e3","e4","e5","e6","e7","e8","e9"];
+
+var FLOWS = [
+  { id:"story",  label:"One focus session",     color:"#0f172a" },
+  { id:"cmd",    label:"You ask, it answers",   color:COLOR.cmd  },
+  { id:"auth",   label:"Safety check",          color:COLOR.auth },
+  { id:"ai",     label:"AI answer",             color:COLOR.ai   },
+  { id:"db",     label:"Saved and remembered",  color:COLOR.db   },
+  { id:"bg",     label:"Happens by itself",     color:COLOR.bg   },
+  { id:"helper", label:"Shared rules",          color:COLOR.helper }
+];
+
+var ZONES = [
+  { id:"client",  n:1, title:"YOU, IN DISCORD",  sub:"what a member sees and touches",  x:24,   w:232, fill:"#eef2ff", stroke:"#c7d2fe", accent:"#6366f1" },
+  { id:"edge",    n:2, title:"THE FRONT DOOR",   sub:"every knock is checked first",     x:272,  w:238, fill:"#f8fafc", stroke:"#e2e8f0", accent:"#64748b" },
+  { id:"core",    n:3, title:"THE BOT'S BRAIN",  sub:"works things out, talks to nobody",x:526,  w:258, fill:"#f0f9ff", stroke:"#bae6fd", accent:"#0284c7" },
+  { id:"effects", n:4, title:"SENDING THINGS OUT",sub:"the only code that posts and builds",x:800, w:244, fill:"#f5f3ff", stroke:"#ddd6fe", accent:"#7c3aed" },
+  { id:"state",   n:5, title:"WHAT IT REMEMBERS",sub:"one private box for each person",   x:1060, w:246, fill:"#fffbeb", stroke:"#fde68a", accent:"#d97706" },
+  { id:"ext",     n:6, title:"THE OUTSIDE WORLD",sub:"Discord, the AI, the 9 AM clock",  x:1322, w:290, fill:"#ecfdf5", stroke:"#a7f3d0", accent:"#059669" }
+];
+
+var NODES = {
+
+  slash: { zone:"client", shape:"rect", x:44, y:150, w:192, h:64,
+    title:"You type a command", role:"like /focus or /launch",
+    plain:"You type something like /focus 25 write the report. Discord wraps that up and sends it to the bot. This is the only way to start anything; the bot cannot read normal chat messages.",
+    tech:["src/definitions.ts - the 4 commands and their options","scripts/register-commands.ts - puts them in the server"],
+    data:"options: minutes (25, 50 or 90), goal (up to 200 characters)" },
+
+  buttons: { zone:"client", shape:"rect", x:44, y:330, w:192, h:64,
+    title:"You press a button", role:"Create, Cancel, Add buddy",
+    plain:"Some replies come with buttons under them, for example Create or Cancel when you ask for your own private room. Discord tells the bot exactly which button you pressed, and the bot only acts after you press one.",
+    tech:["src/interactions.ts - reads the button name","src/index.ts - handles the press"],
+    data:"space:create, space:cancel, buddy:add, buddy:remove, mem:forgetAll" },
+
+  goals: { zone:"client", shape:"rect", x:44, y:960, w:192, h:64,
+    title:"The #goals thread", role:"where the morning check-in lives",
+    plain:"Every morning the bot posts one short question here and opens a thread under it. Anyone can reply with their goal for the day. Nobody is pinged, and there are no streaks or scores.",
+    tech:["src/checkin.ts - the prompt text and the thread name","src/index.ts - posts it and opens the thread"],
+    data:"one thread per day, named Check-in and the date" },
+
+  endpoint: { zone:"edge", shape:"rect", x:292, y:150, w:198, h:64,
+    title:"The bot's one door", role:"everything arrives here",
+    plain:"The bot is a small program living at one web address. Discord knocks on that single door for every command and every button press, and nothing else is accepted.",
+    tech:["src/index.ts:88 - the entry point","src/index.ts:90 - anything but POST /interactions gets a 404"],
+    data:"only POST, only the /interactions path" },
+
+  gate: { zone:"edge", shape:"diamond", x:298, y:278, w:186, h:124,
+    title:"Is this really Discord?", role:"a stamp only Discord can make",
+    plain:"Before reading a single word, the bot checks a security stamp that only Discord can produce. No stamp, or a fake one, and the door stays shut. This is what stops strangers pretending to be Discord.",
+    tech:["src/verify.ts:21 - verifyDiscordRequest()","src/verify.ts:42 - loads the public key","src/index.ts:95 - a bad stamp gets 401"],
+    data:"checks the signature header against the raw body" },
+
+  router: { zone:"edge", shape:"rect", x:292, y:460, w:198, h:64,
+    title:"What kind of knock?", role:"a command, a button, or hello",
+    plain:"Three things can arrive: a friendly hello (the bot replies I am here), a command, or a button press. The bot simply sends each one to the right place.",
+    tech:["src/index.ts:106 - the hello reply","src/index.ts:112 - commands","src/index.ts:116 - button presses"],
+    data:"also picks up who is asking, by their Discord id" },
+
+  session: { zone:"core", shape:"rect", x:546, y:130, w:218, h:64,
+    title:"The quick commands", role:"focus, launch, waitlist",
+    plain:"These need no thinking, so the bot answers in an instant: start a focus timer, show the countdown to the beta launch, or send the links to the site and the help docs.",
+    tech:["src/commands.ts:152 - dispatch()","src/commands.ts:65 - focus, :121 - launch, :134 - waitlist"],
+    data:"the focus card says who started, how long, the goal and the end time in IST" },
+
+  planner: { zone:"core", shape:"rect", x:546, y:236, w:218, h:64,
+    title:"Reading your words", role:"one command, nine little jobs",
+    plain:"The /hatch command is the big one. Under it sit nine smaller jobs: ask a question, build a room, add a buddy, remove a buddy, remember something, show memory, forget, check your allowance. This box works out which one you meant.",
+    tech:["src/hatch.ts:39 - planHatch()","src/index.ts:205 - handles the quick ones"],
+    data:"turns the command options into one clear intention" },
+
+  ask: { zone:"core", shape:"rect", x:546, y:342, w:218, h:64,
+    title:"Answering a question", role:"the slow one, done politely",
+    plain:"Writing an answer takes a few seconds, but Discord only waits three. So the bot says one moment right away, keeps working in the background, and posts the answer when it is ready.",
+    tech:["src/index.ts:173 - reply first, then work","src/index.ts:310 - answerQuestion()"],
+    data:"checks the allowance, reads your notes, asks the AI, posts the answer" },  ratelimit: { zone:"core", shape:"rect", x:546, y:448, w:218, h:64,
+    title:"Have you had enough?", role:"20 an hour, 80 a day",
+    plain:"Every person gets a fair share of AI answers: twenty an hour and eighty a day. When it runs out the bot says so in a plain sentence, instead of silently failing or leaving you waiting.",
+    tech:["src/ratelimit.ts:7 - the two limits","src/ratelimit.ts:52 - checkLimit()"],
+    data:"counts recent answers only, nothing about what you asked" },
+
+  aiClient: { zone:"core", shape:"rect", x:546, y:554, w:218, h:64,
+    title:"Writing the question", role:"your words plus what it knows",
+    plain:"The bot packs one neat message for the AI: who Hatch is, the notes you chose to save about yourself, and your question. Then it tidies the answer so it fits in a Discord message.",
+    tech:["src/ai.ts:54 - askHatch()","src/ai.ts:20 - the Hatch character and facts","src/ai.ts:137 - shortens long answers"],
+    data:"the model is told Hatch's tone and facts, and nothing about other people" },
+
+  builder: { zone:"core", shape:"rect", x:546, y:660, w:218, h:64,
+    title:"Building your room", role:"a chat, a voice room, your friends",
+    plain:"When you say yes to the preview, the bot creates a private category, a chat channel and a voice room, and lets in only the people you named. Everyone else in the server cannot even see it.",
+    tech:["src/index.ts:456 - buildSpace()","src/index.ts:487 - the category","src/index.ts:517 - the chat, :524 - the voice room"],
+    data:"makes the rooms private first, then adds you and your buddies" },
+
+  spaceRules: { zone:"core", shape:"rect", x:546, y:766, w:218, h:64,
+    title:"Rules for a room", role:"who gets in, how long is a timer",
+    plain:"The house rules, kept in one place: what the room is called, who is allowed to see it, up to six buddies, and a timer that can only be stretched by five or ten minutes.",
+    tech:["src/space.ts:147 - add a buddy, :161 - remove","src/space.ts:173 - start a timer, :216 - extend","src/space.ts:40 - the six buddy limit"],
+    data:"tested on its own, so no room can be built by accident" },
+
+  memoryRules: { zone:"core", shape:"rect", x:546, y:872, w:218, h:64,
+    title:"Rules for remembering", role:"only what you chose to share",
+    plain:"Small and tidy by design: at most 25 short notes per person, each under 160 characters, no duplicates, and the oldest one drops off first. If you ask it to forget everything, everything goes.",
+    tech:["src/memory.ts:32 - remember","src/memory.ts:61 - forget","src/memory.ts:83 - show what is stored"],
+    data:"a note is a kind (goal, preference, buddy) plus the words you used" },
+
+  checkin: { zone:"core", shape:"rect", x:546, y:978, w:218, h:64,
+    title:"Today's question", role:"a different one each weekday",
+    plain:"Seven short questions, one for each day of the week, picked using today's date in India time. This box only writes the words; it never decides to ping anyone.",
+    tech:["src/checkin.ts:79 - the question for a date","src/checkin.ts:85 - the thread name","src/time.ts:12 - today's date in IST"],
+    data:"nothing is saved about who answers, and there is no streak" },
+
+  webhook: { zone:"effects", shape:"rect", x:818, y:130, w:208, h:64,
+    title:"The delayed reply", role:"how the bot answers later",
+    plain:"When you run a command, Discord hands the bot a one-time ticket. That ticket is what lets the bot post the answer a minute later, in the very channel where you asked.",
+    tech:["src/index.ts:757 - followUp()","src/index.ts:769 - the webhook call"],
+    data:"the ticket belongs to your command only, and expires" },
+
+  rest: { zone:"effects", shape:"rect", x:818, y:290, w:208, h:64,
+    title:"Posting to Discord", role:"messages, channels, threads, access",
+    plain:"One shared helper does all the talking: it posts messages, edits them, makes channels, opens threads and lets people in. Every message is told exactly who it is allowed to ping, and the answer is usually nobody.",
+    tech:["src/discord.ts:76 - post a message, :94 - edit one","src/discord.ts:133 - make a channel","src/discord.ts:180 - open a thread"],
+    data:"if Discord is briefly busy, the bot waits and tries again" },
+
+  doClient: { zone:"effects", shape:"rect", x:818, y:720, w:208, h:64,
+    title:"Finding the right box", role:"everyone gets their own",
+    plain:"The bot needs four kinds of boxes: your timer, your notes, your allowance and your room. This is how it fetches the one that belongs to exactly one person, so two people's things never get mixed up.",
+    tech:["src/index.ts:654 - gets the box for a person","src/index.ts:658 - sends it a request"],
+    data:"the name of the box is the person's Discord id, nothing else" },
+
+  timer: { zone:"state", shape:"cyl", x:1078, y:340, w:210, h:72,
+    title:"Your running timer", role:"one per focus session",
+    plain:"Holds only what a timer needs: which channel, who started it, how long, the goal, and when it ends. Once the time-up message is posted, the whole thing is deleted.",
+    tech:["src/timer.ts:166 - the timer box","src/timer.ts:189 - start it","src/timer.ts:215 - the wake-up"],
+    data:"deleted after the message, so nothing piles up" },
+
+  mem: { zone:"state", shape:"cyl", x:1078, y:500, w:210, h:72,
+    title:"Your saved notes", role:"your box, nobody else's",
+    plain:"One small box per Discord account. It holds the handful of things you asked the bot to remember, such as your usual goal or a buddy's name. Wipe it and the box is deleted, not just emptied.",
+    tech:["src/memory-store.ts:19 - the memory box","src/memory-store.ts:109 - wipe everything"],
+    data:"no message history, no usernames, no chatter" },
+
+  usage: { zone:"state", shape:"cyl", x:1078, y:660, w:210, h:72,
+    title:"Your AI allowance", role:"how much is left today",
+    plain:"One box per account holding only the times of recent AI answers, so the bot can count twenty an hour and eighty a day. Your questions and the answers are never kept here.",
+    tech:["src/usage-store.ts:10 - the allowance box","src/usage-store.ts:35 - check, :45 - record"],
+    data:"timestamps only, thrown away after a day" },
+
+  space: { zone:"state", shape:"cyl", x:1078, y:820, w:210, h:72,
+    title:"Your private room", role:"the room's details and state",
+    plain:"One box per room owner: the room's name, which channels belong to it, who is invited, and whether a focus session or a short break is running right now.",
+    tech:["src/space-store.ts:75 - the room box","src/space-store.ts:217 - the end of a timer"],
+    data:"channel ids and buddy ids only, no messages" },
+
+  dapi: { zone:"ext", shape:"pill", x:1342, y:220, w:250, h:64,
+    title:"Discord", role:"where the messages actually appear",
+    plain:"The real Discord servers. What people see lands here: the focus card, the morning question, the time's up ping, the private rooms.",
+    tech:["src/discord.ts:3 - the Discord address","/channels, /guilds, /webhooks - the calls used"],
+    data:"messages, channel names, who is allowed in" },
+
+  alarms: { zone:"ext", shape:"rect", x:1342, y:440, w:250, h:64,
+    title:"Wake me up later", role:"Cloudflare rings the bot's bell",
+    plain:"Cloudflare is the platform the bot runs on. When a timer ends it rings the bot's bell at exactly that moment, and the bot posts time's up. If Discord is down for a second, it tries again.",
+    tech:["src/timer.ts:204 - set the alarm","src/timer.ts:215 - the alarm fires","src/space-store.ts:217 - room alarms"],
+    data:"retried automatically when the platform or Discord stumbles" },
+
+  aiapi: { zone:"ext", shape:"pill", x:1342, y:554, w:250, h:64,
+    title:"The AI service", role:"where the answer is written",
+    plain:"A separate AI service writes the replies to your questions. The only things that leave are Hatch's character, the notes you saved and your question. Your username and channel ids stay behind.",
+    tech:["src/ai.ts:77 - the AI call","AI_BASE_URL and AI_API_KEY, kept as secrets"],
+    data:"a 20 second limit, and it never leaks an error to you" },
+
+  cron: { zone:"ext", shape:"rect", x:1342, y:980, w:250, h:64,
+    title:"The 9 AM clock", role:"every day, nobody presses anything",
+    plain:"Cloudflare runs the morning check-in every day at nine in the morning, India time. Nobody needs to be online and nobody needs to remember it.",
+    tech:["wrangler.jsonc - the 30 3 * * * schedule","src/index.ts:121 - the daily job"],
+    data:"03:30 UTC is 09:00 in India" }
+};/* Each arrow: f = from, t = to, fs/ts = which edge of the box it leaves and enters. */
+var EDGES = [
+
+  { id:"e1", f:"slash", t:"endpoint", fs:"r", ts:"l", flow:"cmd", step:1, label:"you press enter",
+    desc:"You run a command. Discord picks it up and sends it straight to the bot's one door.",
+    tech:["src/index.ts:88"], data:"what Discord sends: the command, your name and id, and the channel" },
+
+  { id:"e2", f:"buttons", t:"endpoint", fs:"r", ts:"l", flow:"cmd", step:2, label:"you click a button",
+    desc:"A button press arrives at the same door. It carries nothing except which button it was.",
+    tech:["src/index.ts:116","src/interactions.ts:72"], data:"just the name of the button, plus who pressed it" },
+
+  { id:"e3", f:"endpoint", t:"gate", fs:"b", ts:"t", flow:"auth", step:3, label:"check the stamp",
+    desc:"Before reading anything, the bot checks the security stamp. A missing or fake stamp is turned away.",
+    tech:["src/index.ts:94","src/verify.ts:21"], data:"no stamp, no conversation" },
+
+  { id:"e4", f:"gate", t:"router", fs:"b", ts:"t", flow:"auth", step:4, label:"it is real, come in",
+    desc:"The stamp is good, so the bot finally opens the message and looks at what was asked.",
+    tech:["src/index.ts:97","src/index.ts:104"], data:"the message is opened only after the check passes" },
+
+  { id:"e5", f:"router", t:"session", fs:"r", ts:"l", flow:"cmd", step:5, label:"an easy one",
+    desc:"focus, launch and waitlist need no thinking at all, so they get an answer immediately.",
+    tech:["src/index.ts:184","src/commands.ts:152"], data:"the reply text goes back to Discord right away" },
+
+  { id:"e6", f:"router", t:"planner", fs:"r", ts:"l", flow:"cmd", step:6, label:"this one is /hatch",
+    desc:"If the command was /hatch, the bot first works out which of its nine jobs you meant.",
+    tech:["src/index.ts:169","src/hatch.ts:39"], data:"ask, build a room, add or remove a buddy, remember, forget, allowance" },
+
+  { id:"e7", f:"session", t:"rest", fs:"b", ts:"l", flow:"cmd", step:7, label:"write the card",
+    desc:"The reply is turned into a friendly sentence: who started, how long, and when it ends.",
+    tech:["src/index.ts:193","src/discord.ts:76"], data:"the end time is written in India time, for everyone" },
+
+  { id:"e8", f:"rest", t:"dapi", fs:"r", ts:"l", flow:"cmd", step:8, label:"the card appears",
+    desc:"The focus card is posted in the channel where you typed the command, and the Session Pings role gets a gentle nudge.",
+    tech:["src/discord.ts:86"], data:"pings only that one role, never everyone" },
+
+  { id:"e9", f:"session", t:"timer", fs:"r", ts:"l", flow:"db", step:9, label:"set a wake-up",
+    desc:"A private timer is created for this one session and set to wake the bot when the time is up.",
+    tech:["src/index.ts:745","src/timer.ts:189"], data:"one timer per session, nothing shared with other people" },
+
+  { id:"e10", f:"planner", t:"ask", fs:"b", ts:"t", flow:"ai", step:10, label:"you asked a question",
+    desc:"The bot says one moment straight away, so you are never left staring at a spinning wheel.",
+    tech:["src/index.ts:173"], data:"the honest answer arrives a few seconds later" },
+
+  { id:"e11", f:"ask", t:"ratelimit", fs:"b", ts:"t", flow:"ai", step:11, label:"do you have any left?",
+    desc:"First the bot checks your allowance. If it is used up, it tells you plainly how long to wait, and no AI time is spent.",
+    tech:["src/index.ts:320","src/ratelimit.ts:52"], data:"20 an hour and 80 a day, per person" },
+
+  { id:"e12", f:"ratelimit", t:"usage", fs:"r", ts:"l", flow:"db", step:12, label:"count this one",
+    desc:"The count is kept in your own box, and only goes up once a real answer exists.",
+    tech:["src/usage-store.ts:45","src/index.ts:345"], data:"the time of the answer, nothing else" },
+
+  { id:"e13", f:"ask", t:"aiClient", fs:"r", ts:"l", flow:"ai", step:13, label:"add your notes",
+    desc:"Your question and the few things you asked the bot to remember are put together into one message.",
+    tech:["src/index.ts:331","src/ai.ts:67"], data:"your question, your saved notes, Hatch's character" },
+
+  { id:"e14", f:"aiClient", t:"aiapi", fs:"r", ts:"l", flow:"ai", step:14, label:"ask the AI",
+    desc:"The only moment where your own words leave the bot. It is asked to answer as Hatch, in your language, briefly.",
+    tech:["src/ai.ts:77"], data:"no username, no channel id, no server name" },
+
+  { id:"e15", f:"ask", t:"webhook", fs:"r", ts:"l", flow:"ai", step:15, label:"answer a bit later",
+    desc:"The answer comes back and is posted using the one-time ticket Discord gave for your command.",
+    tech:["src/index.ts:346","src/index.ts:757"], data:"it appears in the same channel, as the bot" },
+
+  { id:"e16", f:"webhook", t:"dapi", fs:"r", ts:"l", flow:"ai", step:16, label:"posted for you",
+    desc:"Your question is shown in one short line, then the answer. Everyone in that channel can read it, so the bot is careful about what it repeats.",
+    tech:["src/index.ts:769"], data:"the question is shortened to 200 characters before it is echoed" },  { id:"e17", f:"router", t:"builder", fs:"r", ts:"l", flow:"cmd", step:17, label:"you pressed Create",
+    desc:"Nothing is built until you press Create. Your press is the only thing that starts this.",
+    tech:["src/index.ts:366","src/index.ts:456"], data:"the bot builds a room for you, using your own id" },
+
+  { id:"e18", f:"builder", t:"rest", fs:"r", ts:"b", flow:"cmd", step:18, label:"make the rooms",
+    desc:"Three things are made, in order: a category to hold it together, a chat channel and a voice room.",
+    tech:["src/index.ts:487","src/index.ts:517","src/index.ts:524"], data:"each room is private from the second it is created" },
+
+  { id:"e19", f:"builder", t:"doClient", fs:"r", ts:"l", flow:"db", step:19, label:"write it down",
+    desc:"The bot writes down which channels it just made, so it can find them again next time.",
+    tech:["src/index.ts:542","src/index.ts:566"], data:"the room's ids are kept in the owner's own box" },
+
+  { id:"e20", f:"doClient", t:"space", fs:"r", ts:"l", flow:"db", step:20, label:"the room's box",
+    desc:"Everything about one room lives in a single box that belongs to one person.",
+    tech:["src/space-store.ts:75"], data:"name, channels, buddies, and whether a timer is running" },
+
+  { id:"e21", f:"doClient", t:"mem", fs:"r", ts:"l", flow:"db", step:21, label:"the notes box",
+    desc:"Saved facts follow the person, not the server. Your notes are the same wherever you talk to Hatch.",
+    tech:["src/memory-store.ts:19"], data:"looked up by your Discord id" },
+
+  { id:"e22", f:"doClient", t:"usage", fs:"r", ts:"l", flow:"db", step:22, label:"the allowance box",
+    desc:"Same idea for your AI allowance: one box per person, so nobody uses up anybody else's.",
+    tech:["src/usage-store.ts:10"], data:"kept apart from your notes on purpose" },
+
+  { id:"e23", f:"ask", t:"doClient", fs:"b", ts:"l", flow:"db", step:23, label:"read your notes",
+    desc:"Before the AI is asked anything, your saved notes are fetched so the answer actually sounds like it knows you.",
+    tech:["src/index.ts:331"], data:"empty notes simply mean a more general answer" },
+
+  { id:"e24", f:"router", t:"doClient", fs:"b", ts:"b", flow:"db", step:24, label:"you pressed a button",
+    desc:"Adding a buddy, removing one, wiping your notes and opening your room all go through the same safe path.",
+    tech:["src/index.ts:373","src/index.ts:390","src/index.ts:405"], data:"the bot checks the button belongs to you before it acts" },
+
+  { id:"e25", f:"timer", t:"alarms", fs:"r", ts:"l", flow:"bg", step:25, label:"wake me at the end",
+    desc:"The timer asks Cloudflare to ring the bot's bell exactly when the session ends.",
+    tech:["src/timer.ts:204"], data:"the wake-up time is the end time, nothing else" },
+
+  { id:"e26", f:"space", t:"alarms", fs:"r", ts:"l", flow:"bg", step:26, label:"wake me after the break",
+    desc:"Your private room does the same, for the end of a focus session or for a five minute break.",
+    tech:["src/space-store.ts:177","src/space-store.ts:217"], data:"one wake-up at a time per room" },
+
+  { id:"e27", f:"alarms", t:"dapi", fs:"t", ts:"b", flow:"bg", step:27, label:"time is up!",
+    desc:"The bell rings, and the bot posts time is up and mentions only the person who started.",
+    tech:["src/timer.ts:225","src/space-store.ts:240"], data:"the timer then deletes itself; the room updates one live message" },
+
+  { id:"e28", f:"cron", t:"checkin", fs:"l", ts:"r", flow:"bg", step:28, label:"what day is it?",
+    desc:"At nine in the morning the bot asks for today's question and today's thread name.",
+    tech:["src/index.ts:121","src/checkin.ts:79"], data:"the date is worked out in India time" },
+
+  { id:"e29", f:"cron", t:"rest", fs:"b", ts:"l", flow:"bg", step:29, label:"post the question",
+    desc:"One short question goes into #goals, then a thread is opened under it.",
+    tech:["src/index.ts:125","src/index.ts:143"], data:"no pings, and no second question if the thread fails" },
+
+  { id:"e30", f:"dapi", t:"goals", fs:"l", ts:"b", flow:"bg", step:30, label:"the thread appears",
+    desc:"What you see in the morning: one question, one thread, and no pressure to answer.",
+    tech:["src/checkin.ts:85"], data:"nothing is counted, so there is nothing to lose" },
+
+  { id:"e31", f:"builder", t:"spaceRules", fs:"b", ts:"t", flow:"helper", step:31, label:"follows the rules",
+    desc:"The builder follows the written house rules instead of inventing names and permissions on the fly.",
+    tech:["src/space.ts:69","src/space.ts:110"], data:"names, slugs and who can see what" },
+
+  { id:"e32", f:"mem", t:"memoryRules", fs:"l", ts:"r", flow:"helper", step:32, label:"follows the rules",
+    desc:"The notes box uses the same limits everywhere: 25 notes, 160 characters, no duplicates.",
+    tech:["src/memory.ts:32"], data:"so a bug in one place cannot quietly grow your notes" },
+
+  { id:"e33", f:"space", t:"spaceRules", fs:"l", ts:"r", flow:"helper", step:33, label:"follows the rules",
+    desc:"The live room message is written by the same rules, so it always matches what the bot says elsewhere.",
+    tech:["src/space.ts:261"], data:"one message, edited in place, never re-posted" }
+];/* ------------------------------------------------------------------ render */
+var NS = "http://www.w3.org/2000/svg";
+
+/* Cables routed by hand so none of them cut through a box. */
+var ROUTES = {
+  e9:  [[764,162],[792,162],[792,376],[1078,376]],
+  e13: [[764,374],[792,374],[792,586],[764,586]],
+  e23: [[764,392],[806,392],[806,700],[818,752]],
+  e24: [[391,524],[391,1090],[922,1090],[922,784]],
+  e26: [[1288,856],[1316,856],[1316,472],[1342,472]],
+  e29: [[1467,1044],[1467,1064],[776,1064],[776,322],[818,322]],
+  e30: [[1342,252],[1332,252],[1332,1114],[140,1114],[140,1024]],
+  e32: [[1078,536],[1052,536],[1052,904],[764,904]],
+  e7:  [[655,194],[655,208],[791,208],[791,322],[818,322]]
+};
+
+function el(name, attrs, parent){
+  var n = document.createElementNS(NS, name);
+  for (var k in attrs) { if (attrs[k] !== null && attrs[k] !== undefined) n.setAttribute(k, attrs[k]); }
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function sidePoint(n, side){
+  if (side === "l") return [n.x, n.y + n.h/2, -1, 0];
+  if (side === "r") return [n.x + n.w, n.y + n.h/2, 1, 0];
+  if (side === "t") return [n.x + n.w/2, n.y, 0, -1];
+  return [n.x + n.w/2, n.y + n.h, 0, 1];
+}
+function smoothPath(A, B, k){
+  return "M "+A[0]+" "+A[1]+" C "+(A[0]+A[2]*k)+" "+(A[1]+A[3]*k)+", "+(B[0]+B[2]*k)+" "+(B[1]+B[3]*k)+", "+B[0]+" "+B[1];
+}
+function busPath(pts, r){
+  r = r || 18;
+  var d = "M "+pts[0][0]+" "+pts[0][1];
+  for (var i = 1; i < pts.length - 1; i++){
+    var p0 = pts[i-1], p1 = pts[i], p2 = pts[i+1];
+    var v1x = p1[0]-p0[0], v1y = p1[1]-p0[1], v2x = p2[0]-p1[0], v2y = p2[1]-p1[1];
+    var l1 = Math.sqrt(v1x*v1x + v1y*v1y) || 1, l2 = Math.sqrt(v2x*v2x + v2y*v2y) || 1;
+    var rr = Math.min(r, l1/2, l2/2);
+    var ax = p1[0] - v1x/l1*rr, ay = p1[1] - v1y/l1*rr;
+    var bx = p1[0] + v2x/l2*rr, by = p1[1] + v2y/l2*rr;
+    d += " L "+ax+" "+ay+" Q "+p1[0]+" "+p1[1]+" "+bx+" "+by;
+  }
+  var last = pts[pts.length - 1];
+  return d + " L "+last[0]+" "+last[1];
+}
+
+var SVG_STYLE = [
+  ".root{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif}",
+  ".zone-title{font-size:10.4px;font-weight:800;letter-spacing:.13em;fill:#475569}",
+  ".zone-num{font-size:10px;font-weight:800;fill:#fff}",
+  ".zone-sub{font-size:9.6px;fill:#94a3b8;letter-spacing:.01em}",
+  ".node-title{font-size:13.2px;font-weight:700;fill:#0f172a;letter-spacing:-.01em}",
+  ".node-role{font-size:10.4px;fill:#64748b}",
+  ".node{cursor:pointer}",
+  ".node .shape{transition:stroke-width .12s}",
+  ".node:hover .shape{stroke-width:3}",
+  ".node.sel .shape{stroke-width:3.4}",
+  ".edge{fill:none;stroke-linecap:round;stroke-linejoin:round;transition:stroke-width .12s}",
+  ".edge-hit{fill:none;stroke:transparent;stroke-width:18;cursor:pointer}",
+  ".edge-g{cursor:pointer}",
+  ".edge-g.sel .edge,.edge-g:hover .edge{stroke-width:3.6}",
+  ".badge-text{font-size:9.6px;font-weight:800;fill:#fff;text-anchor:middle}",
+  ".edge-label{font-size:10px;font-weight:650;paint-order:stroke;stroke:#fbfbfd;stroke-width:3.6;stroke-linejoin:round}"
+].join("\n");
+
+function buildScene(){
+  var svg = el("svg", { xmlns: NS, width:"100%", height:"100%", class:"root" });
+  var style = el("style", {}, svg);
+  style.textContent = SVG_STYLE;
+
+  var defs = el("defs", {}, svg);
+  var pat = el("pattern", { id:"dots", width:26, height:26, patternUnits:"userSpaceOnUse" }, defs);
+  el("circle", { cx:1.2, cy:1.2, r:1.15, fill:"#dde3ec" }, pat);
+
+  var lift = el("filter", { id:"lift", x:"-30%", y:"-30%", width:"160%", height:"180%" }, defs);
+  el("feDropShadow", { dx:0, dy:3, stdDeviation:5, "flood-color":"#0f172a", "flood-opacity":0.12 }, lift);
+
+  FLOWS.forEach(function(f){
+    var m = el("marker", { id:"ar-"+f.id, viewBox:"0 0 10 10", refX:9, refY:5, markerUnits:"userSpaceOnUse", markerWidth:11, markerHeight:11, orient:"auto-start-reverse" }, defs);
+    el("path", { d:"M 0 0 L 10 5 L 0 10 z", fill:f.color }, m);
+  });
+
+  var scene = el("g", { id:"scene" }, svg);
+  el("rect", { x:-2000, y:-2000, width:W+4000, height:H+4000, fill:"#fbfbfd" }, scene);
+  el("rect", { x:0, y:0, width:W, height:H, fill:"url(#dots)", opacity:0.85 }, scene);
+
+  ZONES.forEach(function(z){
+    el("rect", { x:z.x, y:112, width:z.w, height:1008, rx:14, fill:z.fill,
+      "fill-opacity":0.62, stroke:z.stroke, "stroke-width":1.2 }, scene);
+    el("circle", { cx:z.x+14, cy:100, r:8.5, fill:z.accent }, scene);
+    var num = el("text", { x:z.x+14, y:100, class:"zone-num", "text-anchor":"middle", dy:"0.34em" }, scene);
+    num.textContent = z.n;
+    var t = el("text", { x:z.x+28, y:104, class:"zone-title" }, scene);
+    t.textContent = z.title;
+    var sub = el("text", { x:z.x+28, y:132, class:"zone-sub" }, scene);
+    sub.textContent = z.sub;
+  });
+
+  return { svg: svg, scene: scene };
+}function zoneAccent(zoneId){ for (var i=0;i<ZONES.length;i++) if (ZONES[i].id === zoneId) return ZONES[i].accent; return "#475569"; }
+
+function drawEdges(scene, store){
+  var sorted = EDGES.slice().sort(function(a,b){ return (b.flow === "helper" ? 1 : 0) - (a.flow === "helper" ? 1 : 0); });
+  sorted.forEach(function(e){
+    var A = NODES[e.f], B = NODES[e.t];
+    var d;
+    if (ROUTES[e.id]) { d = busPath(ROUTES[e.id]); }
+    else {
+      var a = sidePoint(A, e.fs), b = sidePoint(B, e.ts);
+      var dist = Math.sqrt((b[0]-a[0])*(b[0]-a[0]) + (b[1]-a[1])*(b[1]-a[1]));
+      d = smoothPath(a, b, Math.max(30, Math.min(110, dist * 0.30)));
+    }
+    var color = COLOR[e.flow];
+    var g = el("g", { class:"edge-g f-"+e.flow, "data-edge":e.id }, scene);
+    var path = el("path", { d:d, class:"edge", stroke:color, "stroke-width": e.flow === "helper" ? 1.3 : 1.7,
+      "stroke-dasharray": e.flow === "helper" ? "5 5" : null,
+      "marker-end":"url(#ar-"+e.flow+")" }, g);
+    el("path", { d:d, class:"edge-hit" }, g);
+    var lbl = el("text", { class:"edge-label", fill:color, opacity:0 }, g);
+    lbl.textContent = e.label;
+    store.edges[e.id] = { g:g, path:path, label:lbl };
+  });
+}
+
+function drawNodes(scene, store){
+  Object.keys(NODES).forEach(function(id){
+    var n = NODES[id], accent = zoneAccent(n.zone);
+    var g = el("g", { class:"node n-"+n.zone, "data-node":id }, scene);
+    var shapeTag, body;
+
+    if (n.shape === "cyl") {
+      var rx = n.w/2, ry = 9;
+      body = "M "+n.x+" "+(n.y+ry)+" V "+(n.y+n.h-ry)+" A "+rx+" "+ry+" 0 0 0 "+(n.x+n.w)+" "+(n.y+n.h-ry)+
+             " V "+(n.y+ry)+" A "+rx+" "+ry+" 0 0 0 "+n.x+" "+(n.y+ry)+" Z";
+      shapeTag = el("path", { d:body, class:"shape", fill:"#fffdf7", stroke:accent, "stroke-width":1.8, "stroke-linejoin":"round", filter:"url(#lift)" }, g);
+      el("path", { d:"M "+n.x+" "+(n.y+ry)+" A "+rx+" "+ry+" 0 0 0 "+(n.x+n.w)+" "+(n.y+ry), fill:"#fef3c7", stroke:accent, "stroke-width":1.4, opacity:0.9 }, g);
+    } else if (n.shape === "diamond") {
+      var cx = n.x + n.w/2, cy = n.y + n.h/2;
+      body = "M "+cx+" "+n.y+" L "+(n.x+n.w)+" "+cy+" L "+cx+" "+(n.y+n.h)+" L "+n.x+" "+cy+" Z";
+      shapeTag = el("path", { d:body, class:"shape", fill:"#fff", stroke:accent, "stroke-width":1.8, "stroke-linejoin":"round", filter:"url(#lift)" }, g);
+    } else {
+      var r = n.shape === "pill" ? n.h/2 : 10;
+      shapeTag = el("rect", { x:n.x, y:n.y, width:n.w, height:n.h, rx:r, class:"shape",
+        fill: n.shape === "pill" ? "#f0fdf9" : "#fff", stroke:accent, "stroke-width":1.8, filter:"url(#lift)" }, g);
+    }
+
+    var isDiamond = n.shape === "diamond";
+    var cy2 = n.y + n.h/2;
+    var ty = isDiamond ? cy2 - 12 : (n.shape === "cyl" ? n.y + 36 : cy2 - 4);
+    var sy = isDiamond ? cy2 + 4 : (n.shape === "cyl" ? n.y + 52 : cy2 + 12);
+
+    var t = el("text", { x:n.x + n.w/2, y:ty, class:"node-title", "text-anchor":"middle" }, g);
+    t.textContent = n.title;
+    var rr = el("text", { x:n.x + n.w/2, y:sy, class:"node-role", "text-anchor":"middle" }, g);
+    rr.textContent = n.role;
+
+    if (isDiamond) {
+      t.setAttribute("font-size", "11.4");
+      rr.setAttribute("font-size", "9.4");
+    }
+
+    g.addEventListener("click", function(ev){ ev.stopPropagation(); if (!dragMoved) openNode(id); }); g.addEventListener("mouseenter", function(){ if (!dragging) applyEdgeState(edgeMapForNode(id)); }); g.addEventListener("mouseleave", function(){ if (!dragging) applyEdgeState(edgeIdsFor(activeFlow)); });
+    store.nodes[id] = { g:g, shape:shapeTag };
+  });
+}
+
+function placeBadges(store){
+  EDGES.forEach(function(e){
+    var rec = store.edges[e.id];
+    if (!rec) return;
+    var len = 0;
+    try { len = rec.path.getTotalLength(); } catch(err) { len = 0; }
+    if (!len) return;
+    var p = rec.path.getPointAtLength(len * 0.5);
+    var g = el("g", { class:"badge f-"+e.flow, "data-badge":e.id }, rec.g);
+    var circ = el("circle", { cx:p.x, cy:p.y, r:8.2, fill:COLOR[e.flow], stroke:"#fff", "stroke-width":2 }, g);
+    var t = el("text", { x:p.x, y:p.y, class:"badge-text", dy:"0.35em" }, g);
+    t.textContent = e.step;
+    var lp = rec.path.getPointAtLength(Math.min(len * 0.5 + 26, len - 4));
+    rec.label.setAttribute("x", lp.x);
+    rec.label.setAttribute("y", lp.y - 9);
+    rec.label.setAttribute("text-anchor", "middle"); rec.badge = g; g.style.opacity = 0;
+  });
+}/* ------------------------------------------------------------- inspector */
+var store = { nodes:{}, edges:{} };
+var dragMoved = false;
+var activeFlow = null;
+var selected = null, selectedKind = null;
+var showTech = false;
+
+function esc(s){
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function fileRows(list){
+  return (list || []).map(function(f){ return "<span class=file><code>" + esc(f) + "</code></span>"; }).join("");
+}
+function flowTag(flow){
+  var f = null;
+  for (var i=0;i<FLOWS.length;i++) if (FLOWS[i].id === flow) f = FLOWS[i];
+  if (!f) return "";
+  return "<span class=tag style=\"background:" + f.color + "\">" + esc(f.label) + "</span>";
+}
+function techSections(tech, data){
+  if (!showTech) return "";
+  return "<div class=sec><h4>Where it lives in the code</h4>" + fileRows(tech) + "</div>" +
+         "<div class=sec><h4>The technical bit</h4><div class=payload>" + esc(data || "") + "</div></div>";
+}
+function paint(){
+  var body = document.getElementById("pBody");
+  var kind = document.getElementById("pKind");
+  var title = document.getElementById("pTitle");
+  var role = document.getElementById("pRole");
+
+  if (!selected) {
+    kind.textContent = "start here";
+    title.textContent = "Click anything";
+    role.textContent = "a box, an arrow, a lane";
+    body.innerHTML = "<div class=sec><div class=lead>This is the whole bot on one page. Each lane is a part of it, and each arrow is one numbered step of what happens after you type something in Discord.</div></div>" +
+      "<div class=sec><h4>One focus session, start to finish</h4><div class=row>1. You type /focus 25 write the report in Discord.</div><div class=row>2. The bot checks the message really came from Discord, then posts your focus card in the channel.</div><div class=row>3. It sets a quiet alarm, so nobody has to keep Discord open.</div><div class=row>4. Twenty five minutes later the alarm rings and the bot says time is up, mentioning only you.</div><div class=row>5. Ask a question instead, and it checks your allowance, reads your saved notes, asks the AI and posts the answer.</div></div>" + "<div class=sec><h4>How to read it</h4>" +
+      "<div class=row>Follow the numbers <b>1 to 33</b> for the full story of one focus session.</div>" +
+      "<div class=row>Only one story is drawn at a time. Click a colour at the bottom left to switch, or hover a box to see just its own wires.</div>" +
+      "<div class=row>Click a box to read what it does in plain words. Turn on <b>Tech details</b> if you also want the file names.</div></div>";
+    return;
+  }
+
+  if (selectedKind === "node") {
+    var n = NODES[selected];
+    var zone = null;
+    for (var i=0;i<ZONES.length;i++) if (ZONES[i].id === n.zone) zone = ZONES[i];
+    kind.textContent = "lane " + (zone ? zone.n : "?") + ": " + (zone ? zone.title : "");
+    title.textContent = n.title;
+    role.textContent = n.role;
+    body.innerHTML = "<div class=sec><div class=lead>" + esc(n.plain) + "</div></div>" + techSections(n.tech, n.data);
+    return;
+  }
+
+  var e = null;
+  for (var j=0;j<EDGES.length;j++) if (EDGES[j].id === selected) e = EDGES[j];
+  if (!e) return;
+  kind.textContent = "arrow " + e.step + " of 33";
+  title.textContent = e.label;
+  role.textContent = NODES[e.f].title + "  to  " + NODES[e.t].title;
+  body.innerHTML = "<div class=sec><div class=lead>" + esc(e.desc) + "</div></div>" +
+    "<div class=sec><h4>Part of</h4><div class=row>" + flowTag(e.flow) + "step " + e.step + "</div></div>" +
+    techSections(e.tech, e.data);
+}
+function openPanel(){
+  var panel = document.getElementById("panel");
+  panel.classList.add("open");
+  panel.setAttribute("aria-hidden", "false");
+}
+function clearSel(){
+  Object.keys(store.nodes).forEach(function(id){ store.nodes[id].g.classList.remove("sel"); });
+  Object.keys(store.edges).forEach(function(id){ store.edges[id].g.classList.remove("sel"); });
+}
+function openNode(id){
+  if (!NODES[id]) return;
+  clearSel();
+  store.nodes[id].g.classList.add("sel");
+  selected = id; selectedKind = "node";
+  paint(); openPanel();
+}
+function openEdge(id){
+  clearSel();
+  if (store.edges[id]) store.edges[id].g.classList.add("sel");
+  selected = id; selectedKind = "edge";
+  paint(); openPanel();
+}
+function closePanel(){
+  var panel = document.getElementById("panel");
+  panel.classList.remove("open");
+  panel.setAttribute("aria-hidden", "true");
+  clearSel();
+  selected = null; selectedKind = null;
+}
+function setTech(on){
+  showTech = !!on;
+  var b = document.getElementById("techBtn");
+  b.setAttribute("aria-pressed", showTech ? "true" : "false");
+  if (selected) paint();
+}
+
+/* ---------------------------------------------------------------- legend */
+function buildChips(){
+  var wrap = document.getElementById("chips");
+  var counts = {};
+  EDGES.forEach(function(e){ counts[e.flow] = (counts[e.flow] || 0) + 1; }); counts["story"] = STORY.length;
+  FLOWS.forEach(function(f){
+    var b = document.createElement("button");
+    b.className = "chip";
+    b.setAttribute("data-flow", f.id);
+    b.setAttribute("aria-pressed", "false");
+    b.innerHTML = "<span class=dot style=\"background:" + f.color + "\"></span><span>" + f.label +
+                  "</span><span class=n>" + (counts[f.id] || 0) + "</span>";
+    b.addEventListener("click", function(){ setFilter(activeFlow === f.id ? null : f.id); });
+    wrap.appendChild(b);
+  });
+}
+function touches(nodeId, flow){
+  for (var i=0;i<EDGES.length;i++){
+    var e = EDGES[i];
+    if (e.flow === flow && (e.f === nodeId || e.t === nodeId)) return true;
+  }
+  return false;
+}
+function edgeIdsFor(flow){
+  if (!flow) return null;
+  var out = {};
+  if (flow === "story") { for (var s=0;s<STORY.length;s++) out[STORY[s]] = 1; return out; }
+  for (var j=0;j<EDGES.length;j++) if (EDGES[j].flow === flow) out[EDGES[j].id] = 1;
+  return out;
+}
+function edgeMapForNode(nodeId){
+  var out = {};
+  for (var i=0;i<EDGES.length;i++) if (EDGES[i].f === nodeId || EDGES[i].t === nodeId) out[EDGES[i].id] = 1;
+  return out;
+}
+function applyEdgeState(map){
+  for (var i=0;i<EDGES.length;i++){
+    var rec = store.edges[EDGES[i].id];
+    if (!rec) continue;
+    var on = map ? !!map[EDGES[i].id] : false;
+    rec.g.style.opacity = map ? (on ? 1 : 0.05) : 0.4;
+    rec.path.style.strokeWidth = on ? "2.9" : "1.7";
+    rec.label.style.opacity = on ? 0.98 : 0;
+    if (rec.badge) rec.badge.style.opacity = on ? 1 : 0;
+  }
+}
+function setFilter(flow){
+  activeFlow = flow;
+  applyEdgeState(edgeIdsFor(flow));
+  var chips = document.querySelectorAll(".chip");
+  for (var i=0;i<chips.length;i++){
+    chips[i].setAttribute("aria-pressed", chips[i].getAttribute("data-flow") === flow ? "true" : "false");
+  }
+}
+/* ------------------------------------------------------- pan, zoom, fit */
+var stage = document.getElementById("stage");
+var view = { x:0, y:0, k:1 };
+var dragging = false, lastPt = null;
+
+function apply(){
+  if (store.scene) store.scene.setAttribute("transform", "translate(" + view.x + " " + view.y + ") scale(" + view.k + ")");
+}
+function fit(){
+  var r = stage.getBoundingClientRect();
+  var pad = 48, headroom = 92, reserved = r.width > 1300 ? 330 : 0, avail = r.width - reserved;
+  var k = Math.min((avail - pad*2) / W, (r.height - headroom - pad) / H);
+  k = Math.max(0.12, Math.min(k, 1.5));
+  view.k = k;
+  view.x = (avail - W*k) / 2;
+  view.y = headroom + (r.height - headroom - H*k) / 2;
+  apply();
+}
+
+stage.addEventListener("wheel", function(ev){
+  ev.preventDefault();
+  var r = stage.getBoundingClientRect();
+  var mx = ev.clientX - r.left, my = ev.clientY - r.top;
+  var nk = Math.max(0.12, Math.min(3.2, view.k * Math.exp(-ev.deltaY * 0.0016)));
+  var s = nk / view.k;
+  view.x = mx - (mx - view.x) * s;
+  view.y = my - (my - view.y) * s;
+  view.k = nk;
+  apply();
+}, { passive:false });
+
+stage.addEventListener("pointerdown", function(ev){
+  dragging = true; dragMoved = false;
+  lastPt = { x:ev.clientX, y:ev.clientY };
+  stage.classList.add("dragging");
+  try { stage.setPointerCapture(ev.pointerId); } catch(err) {}
+});
+stage.addEventListener("pointermove", function(ev){
+  if (!dragging || !lastPt) return;
+  var dx = ev.clientX - lastPt.x, dy = ev.clientY - lastPt.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true;
+  view.x += dx; view.y += dy;
+  lastPt = { x:ev.clientX, y:ev.clientY };
+  apply();
+});
+function endDrag(){ dragging = false; lastPt = null; stage.classList.remove("dragging"); }
+stage.addEventListener("pointerup", endDrag);
+stage.addEventListener("pointercancel", endDrag);
+stage.addEventListener("click", function(){ if (!dragMoved) closePanel(); });
+
+/* --------------------------------------------------------------- exports */
+function cloneForExport(){
+  var c = store.svg.cloneNode(true);
+  c.setAttribute("width", W);
+  c.setAttribute("height", H);
+  c.setAttribute("viewBox", "0 0 " + W + " " + H);
+  var sc = c.querySelector("#scene");
+  if (sc) { sc.setAttribute("transform", "translate(0 0) scale(1)"); sc.removeAttribute("style"); }
+  return c;
+}
+function download(blob, name){
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+}
+function exportSVG(){
+  var src = new XMLSerializer().serializeToString(cloneForExport());
+  var blob = new Blob(["<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + "\n" + src], { type:"image/svg+xml;charset=utf-8" });
+  download(blob, "how-hatch-works.svg");
+}
+function exportPNG(){
+  var src = new XMLSerializer().serializeToString(cloneForExport());
+  var blob = new Blob([src], { type:"image/svg+xml;charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var img = new Image();
+  img.onload = function(){
+    var scale = 2;
+    var c = document.createElement("canvas");
+    c.width = W * scale; c.height = H * scale;
+    var g = c.getContext("2d");
+    g.fillStyle = "#fbfbfd";
+    g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    c.toBlob(function(b){ if (b) download(b, "how-hatch-works.png"); }, "image/png");
+  };
+  img.onerror = function(){ URL.revokeObjectURL(url); };
+  img.src = url;
+}
+
+/* ------------------------------------------------------------------ init */
+(function init(){
+  stage.style.userSelect = "none";
+  var built = buildScene();
+  store.svg = built.svg;
+  store.scene = built.scene;
+  stage.appendChild(built.svg);
+
+  drawEdges(built.scene, store);
+  drawNodes(built.scene, store);
+  placeBadges(store);
+
+  EDGES.forEach(function(e){
+    var rec = store.edges[e.id];
+    if (!rec) return;
+    rec.g.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      if (!dragMoved) openEdge(e.id);
+    });
+  });
+
+  buildChips(); setFilter("story"); paint(); openPanel();
+  fit();
+
+  document.getElementById("fit").addEventListener("click", fit);
+  document.getElementById("svgBtn").addEventListener("click", exportSVG);
+  document.getElementById("pngBtn").addEventListener("click", exportPNG);
+  document.getElementById("close").addEventListener("click", closePanel);
+  document.getElementById("techBtn").addEventListener("click", function(){ setTech(!showTech); });
+  window.addEventListener("resize", function(){ if (!dragging) fit(); });
+  document.addEventListener("keydown", function(ev){
+    if (ev.key === "Escape") closePanel();
+    if (ev.key === "f" || ev.key === "F") fit();
+  });
+})();
+</script>
+</body>
+</html>
